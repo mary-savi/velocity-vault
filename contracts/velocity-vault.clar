@@ -318,3 +318,78 @@
 (define-read-only (get-proposal-count)
   (ok (var-get proposal-count))
 )
+
+;; INTERNAL UTILITIES
+
+;; Determine user tier based on stake amount
+(define-private (get-tier-info (stake-amount uint))
+  (if (>= stake-amount u10000000)
+    {
+      tier-level: u3,
+      reward-multiplier: u200,
+    } ;; Gold Tier
+    (if (>= stake-amount u5000000)
+      {
+        tier-level: u2,
+        reward-multiplier: u150,
+      } ;; Silver Tier
+      {
+        tier-level: u1,
+        reward-multiplier: u100,
+      } ;; Bronze Tier
+    )
+  )
+)
+
+;; Calculate velocity multiplier from lock period
+(define-private (calculate-lock-multiplier (lock-period uint))
+  (if (>= lock-period u8640) ;; 2 months = 1.5x velocity
+    u150
+    (if (>= lock-period u4320) ;; 1 month = 1.25x velocity
+      u125
+      u100 ;; No lock = 1x velocity
+    )
+  )
+)
+
+;; Compute accumulated rewards for staking position
+(define-private (calculate-rewards
+    (user principal)
+    (blocks uint)
+  )
+  (let (
+      (staking-position (unwrap! (map-get? StakingPositions user) u0))
+      (user-position (unwrap! (map-get? UserPositions user) u0))
+      (stake-amount (get amount staking-position))
+      (base-rate (var-get base-reward-rate))
+      (multiplier (get rewards-multiplier user-position))
+    )
+    ;; Advanced reward calculation with compound multipliers
+    (/ (* (* (* stake-amount base-rate) multiplier) blocks) u14400000)
+  )
+)
+
+;; Validate proposal description quality
+(define-private (is-valid-description (desc (string-utf8 256)))
+  (and
+    (>= (len desc) u10) ;; Minimum meaningful description
+    (<= (len desc) u256) ;; Maximum description length
+  )
+)
+
+;; Verify lock period options
+(define-private (is-valid-lock-period (lock-period uint))
+  (or
+    (is-eq lock-period u0) ;; Flexible (no lock)
+    (is-eq lock-period u4320) ;; Velocity Lock: 1 month
+    (is-eq lock-period u8640) ;; Velocity Lock: 2 months
+  )
+)
+
+;; Validate governance voting timeframe
+(define-private (is-valid-voting-period (period uint))
+  (and
+    (>= period u100) ;; Minimum deliberation time
+    (<= period u2880) ;; Maximum voting window (~1 day)
+  )
+)
